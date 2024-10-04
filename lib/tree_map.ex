@@ -18,7 +18,8 @@ defmodule TreeMap do
       iex> %TreeMap{}
       %TreeMap{size: 0, root: nil}
   """
-  defstruct size: 0, root: @empty
+  defstruct size: 0, root: @empty, less: &Kernel.</2
+
 
   @left 0
   @key 1
@@ -27,28 +28,30 @@ defmodule TreeMap do
   @right 4
 
   @type size :: non_neg_integer()
-  @type tree(key, value) :: {tree(key, value), key, value, size(), tree(key, value)} | nil
-  @type t(key, value) :: %__MODULE__{size: non_neg_integer(), root: tree(key, value)}
+  @type node(key, value) :: {tree(key, value), key, value, size(), tree(key, value)}
+  @type tree(key, value) :: node(key, value) | nil
+  @type compare(key) :: (key, key -> boolean())
+  @type resolve(key, value) :: (key, value, value -> value)
+  @type t(key, value) :: %__MODULE__{size: non_neg_integer(), root: tree(key, value), less: compare(key)}
 
-  @spec wrap(tree(key, value)) :: t(key, value) when key: var, value: var
-  def wrap(branch), do: %TreeMap{size: size(branch), root: branch}
+  @spec wrap(tree(key, value), compare(key)) :: t(key, value) when key: var, value: var
+  def wrap(branch, less \\ &Kernel.</2), do: %TreeMap{size: size(branch), root: branch, less: less}
 
-  @spec new :: t(term(), term())
-  def new, do: wrap(@empty)
+  @spec new() :: t(term(), term())
+  def new(), do: wrap(@empty)
 
-  def new(enumerable), do: build(enumerable)
 
-  @doc """
-  Creates TreeMap from an Enumerable by applying a transform first
+  @spec new(Enumerable.t({key, value}), compare(key)) :: t(key, value) when key: var, value: var
+  def new(enumerable, less \\ &Kernel.</2), do: build(enumerable, less)
 
-  ## Examples
-      iex> TreeMap.new(Enum.zip(1..7, 1..7), fn {k, v} -> {k, 2 * v} end) |> to_string()
-      "#TreeMap<1 => 2;2 => 4;3 => 6;4 => 8;5 => 10;6 => 12;7 => 14;>"
-  """
-  def new(enumerable, transform), do: build(Enum.map(enumerable, transform))
 
+
+  @spec branch(t(key, value), key, value, t(key, value)) :: node(key, value) when key: var, value: var
   def branch(left, key, value, right), do: {left, key, value, 1 + size(left) + size(right), right}
+
+  @spec leaf(key, value) :: node(key, value) when key: var, value: var
   def leaf(key, value), do: branch(@empty, key, value, @empty)
+  @spec fix_size(node(key, value)) :: node(key, value) when key: var, value: var
   def fix_size(t), do: put_elem(t, @size, 1 + size(left(t)) + size(right(t)))
   def put_left(t, left), do: t |> put_elem(@left, left) |> fix_size()
   def put_right(t, right), do: t |> put_elem(@right, right) |> fix_size()
@@ -72,14 +75,14 @@ defmodule TreeMap do
       iex> TreeMap.new() |> TreeMap.put(1,:a) |> TreeMap.put(1,:b) |> to_string()
       "#TreeMap<1 => b;>"
   """
-  def put(%TreeMap{root: root}, key, value), do: root |> put_rec(key, value) |> wrap
+  def put(%TreeMap{root: root, less: less}, key, value), do: root |> put_rec(key, value, less) |> wrap
 
-  @spec put_rec(tree(key, value), key, value) :: tree(key, value) when key: var, value: var
-  def put_rec(t, k, v) do
+  @spec put_rec(tree(key, value), key, value, compare(key)) :: tree(key, value) when key: var, value: var
+  def put_rec(t, k, v, less) do
     cond do
       is_nil(t) -> leaf(k, v)
-      k < key(t) -> t |> put_left(put_rec(left(t), k, v)) |> check_right_rotate()
-      k > key(t) -> t |> put_right(put_rec(right(t), k, v)) |> check_left_rotate()
+      less.(k, key(t)) -> t |> put_left(put_rec(left(t), k, v, less)) |> check_right_rotate()
+      less.(key(t), k) -> t |> put_right(put_rec(right(t), k, v, less)) |> check_left_rotate()
       true -> put_value(t, v)
     end
   end
@@ -270,41 +273,41 @@ defmodule TreeMap do
       iex> TreeMap.new |> TreeMap.delete(2) |> to_string()
       "#TreeMap<>"
 
-      iex> TreeMap.delete_rec(nil, 1)
+      iex> TreeMap.delete_rec(nil, 1, &Kernel.</2)
       nil
 
-      iex> TreeMap.branch(TreeMap.leaf(1, :a), 2, :b, TreeMap.leaf(3, :c)) |> TreeMap.delete_rec(1)
+      iex> TreeMap.branch(TreeMap.leaf(1, :a), 2, :b, TreeMap.leaf(3, :c)) |> TreeMap.delete_rec(1, &Kernel.</2)
       {nil, 2, :b, 2, {nil, 3, :c, 1, nil}}
 
-      iex> TreeMap.branch(TreeMap.leaf(1, :a), 2, :b, TreeMap.leaf(3, :c)) |> TreeMap.delete_rec(3)
+      iex> TreeMap.branch(TreeMap.leaf(1, :a), 2, :b, TreeMap.leaf(3, :c)) |> TreeMap.delete_rec(3, &Kernel.</2)
       {{nil, 1, :a, 1, nil}, 2, :b, 2, nil}
 
       iex> t = TreeMap.new(Enum.zip(1..7, 1..7))
-      iex> [3,4,5,2,6,7] |> Enum.reduce(t.root, &TreeMap.delete_rec(&2, &1)) |> TreeMap.wrap() |> to_string()
+      iex> [3,4,5,2,6,7] |> Enum.reduce(t.root, fn k, t -> TreeMap.delete_rec(t, k, &Kernel.</2) end) |> TreeMap.wrap() |> to_string()
       "#TreeMap<1 => 1;>"
 
       iex> t = TreeMap.new(Enum.zip(1..7, 1..7))
-      iex> [5,4,3,6,2,1] |> Enum.reduce(t.root, &TreeMap.delete_rec(&2, &1)) |> TreeMap.wrap() |> to_string()
+      iex> [5,4,3,6,2,1] |> Enum.reduce(t.root, fn k, t -> TreeMap.delete_rec(t, k, &Kernel.</2) end) |> TreeMap.wrap() |> to_string()
       "#TreeMap<7 => 7;>"
   """
 
   @spec delete(t(key, value), key) :: t(key, value) when key: var, value: var
-  def delete(%TreeMap{root: root}, key), do: root |> delete_rec(key) |> wrap()
+  def delete(%TreeMap{root: root, less: less}, key), do: root |> delete_rec(key, less) |> wrap()
 
-  @spec delete_rec(tree(key, value), key) :: tree(key, value) when key: var, value: var
-  def delete_rec(t, k) do
+  @spec delete_rec(tree(key, value), key, compare(key)) :: tree(key, value) when key: var, value: var
+  def delete_rec(t, k, less) do
     cond do
       is_nil(t) -> t
-      k < key(t) -> t |> put_left(delete_rec(left(t), k)) |> check_left_rotate()
-      k > key(t) -> t |> put_right(delete_rec(right(t), k)) |> check_right_rotate()
+      less.(k, key(t)) -> t |> put_left(delete_rec(left(t), k, less)) |> check_left_rotate()
+      less.(key(t), k) -> t |> put_right(delete_rec(right(t), k, less)) |> check_right_rotate()
       is_nil(left(t)) -> right(t)
       is_nil(right(t)) -> left(t)
       size(left(t)) > size(right(t)) ->
         {k_max, v_max} = max(left(t))
-        branch(delete_rec(left(t), k_max), k_max, v_max, right(t))
+        branch(delete_rec(left(t), k_max, less), k_max, v_max, right(t))
       true ->
         {k_min, v_min} = min(right(t))
-        branch(left(t), k_min, v_min, delete_rec(right(t), k_min))
+        branch(left(t), k_min, v_min, delete_rec(right(t), k_min, less))
     end
   end
 
@@ -334,7 +337,7 @@ defmodule TreeMap do
   def max({_, _, _, _, right}), do: max(right)
   def max(nil), do: nil
 
-  def drop(t, keys), do: Enum.reduce(keys, t.root, fn key, t -> delete_rec(t, key) end)
+  def drop(t, keys), do: keys |> Enum.reduce(t.root, fn key, t -> delete_rec(t, key, t.less) end) |> wrap()
 
   @doc """
   Generate the difference of two sets
@@ -350,19 +353,18 @@ defmodule TreeMap do
       "#TreeMap<>"
   """
   @spec difference(t(key, value), t(key, value)) :: t(key, value) when key: var, value: var
-  def difference(tree1, tree2), do: difference_rec(postorder(tree1).(), postorder(tree2).(), [])
+  def difference(tree1, tree2), do: check(tree1, tree2, fn -> difference_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less) end)
 
-  def difference_rec(:done, _, items), do: build(items, true)
-  def difference_rec(a, :done, items), do: finish(a, items)
+  def difference_rec(:done, _, items, _), do: build(items, true)
+  def difference_rec(a, :done, items, _), do: finish(a, items)
 
-  def difference_rec({a_item, a_iter}, {b_item, _} = b, items) when a_item > b_item,
-    do: difference_rec(a_iter.(), b, [a_item | items])
-
-  def difference_rec({a_item, _} = a, {b_item, b_iter}, items) when a_item < b_item,
-    do: difference_rec(a, b_iter.(), items)
-
-  def difference_rec({_, a_iter}, {_, b_iter}, items),
-    do: difference_rec(a_iter.(), b_iter.(), items)
+  def difference_rec({{a_k, _} = a_item, a_iter} = a, {{b_k, _}, b_iter} = b, items, less) do
+    cond do
+      less.(b_k, a_k) -> difference_rec(a_iter.(), b, [a_item | items], less)
+      less.(a_k, b_k) -> difference_rec(a, b_iter.(), items, less)
+      true -> difference_rec(a_iter.(), b_iter.(), items, less)
+    end
+  end
 
   @doc """
   Tests two sets have distinct members
@@ -378,19 +380,19 @@ defmodule TreeMap do
       false
   """
   @spec disjoint?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def disjoint?(tree1, tree2), do: disjoint_rec(preorder(tree1).(), preorder(tree2).())
+  def disjoint?(tree1, tree2), do: check(tree1, tree2, fn -> disjoint_rec(preorder(tree1).(), preorder(tree2).(), tree1.less) end)
 
-  @spec disjoint_rec(iterator_result({key, value}), iterator_result({key, value})) :: boolean() when key: var, value: var
-  def disjoint_rec(:done, _), do: true
-  def disjoint_rec(_, :done), do: true
+  @spec disjoint_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  def disjoint_rec(:done, _, _), do: true
+  def disjoint_rec(_, :done, _), do: true
 
-  def disjoint_rec({a_item, a_iter}, {b_item, _} = b_state) when a_item < b_item,
-    do: disjoint_rec(a_iter.(), b_state)
-
-  def disjoint_rec({a_item, _} = a_state, {b_item, b_iter}) when a_item > b_item,
-    do: disjoint_rec(a_state, b_iter.())
-
-  def disjoint_rec(_, _), do: false
+  def disjoint_rec({{a_k, _}, a_iter} = a, {{b_k, _}, b_iter} = b, less) do
+    cond do
+    less.(a_k, b_k) -> disjoint_rec(a_iter.(), b, less)
+    less.(b_k, a_k) -> disjoint_rec(a, b_iter.(), less)
+    true -> false
+    end
+  end
 
   @doc """
   Tests two sets have the same members
@@ -408,15 +410,18 @@ defmodule TreeMap do
       true
   """
   @spec equal?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def equal?(%TreeMap{} = tree1, %TreeMap{} = tree2), do: equal_rec(preorder(tree1).(), preorder(tree2).())
+  def equal?(%TreeMap{} = tree1, %TreeMap{} = tree2), do:
+    tree1.less == tree2.less and equal_rec(preorder(tree1).(), preorder(tree2).(), tree1.less)
+
   def equal?(_tree1, _tree2), do: false
 
-  @spec equal_rec(iterator_result({key, value}), iterator_result({key, value})) :: boolean() when key: var, value: var
-  def equal_rec(:done, :done), do: true
-  def equal_rec(:done, _), do: false
-  def equal_rec(_, :done), do: false
-  def equal_rec({a_item, _}, {b_item, _}) when a_item != b_item, do: false
-  def equal_rec({_, a_iter}, {_, b_iter}), do: equal_rec(a_iter.(), b_iter.())
+  @spec equal_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  def equal_rec(:done, :done, _), do: true
+  def equal_rec(:done, _, _), do: false
+  def equal_rec(_, :done, _), do: false
+  def equal_rec({{a_k, a_v}, a_iter}, {{b_k, b_v}, b_iter}, less) do
+    !less.(a_k, b_k) and !less.(b_k, a_k) and a_v == b_v and equal_rec(a_iter.(), b_iter.(), less)
+  end
 
   @doc """
   Generate the intersect of two sets
@@ -431,18 +436,27 @@ defmodule TreeMap do
       iex> TreeMap.intersect(TreeMap.new(Enum.zip(1..5, 1..5)), TreeMap.new(Enum.zip(3..8, 3..8))) |> to_string
       "#TreeMap<3 => 3;4 => 4;5 => 5;>"
   """
- @spec intersect(t(key, value), t(key, value), (key, value, value -> value)) :: t(key, value) when key: var, value: var
- def intersect(tree1, tree2, f \\ fn _, _, v2 -> v2 end),
-    do: intersect_rec(postorder(tree1).(), postorder(tree2).(), [], f)
+ @spec intersect(t(key, value), t(key, value), resolve(key, value)) :: t(key, value) when key: var, value: var
+ def intersect(tree1, tree2, resolve \\ fn _, _, v2 -> v2 end) do
+    check(tree1, tree2, fn -> intersect_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less, resolve) end)
+  end
 
-  @spec intersect_rec(iterator_result({key, value}), iterator_result({key, value}), [{key, value}], (key, value, value -> value)) :: t(key, value) when key: var, value: var
-  def intersect_rec(:done, _, items, _), do: build(items, true)
-  def intersect_rec(_, :done, items, _), do: build(items, true)
-  def intersect_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter} = b, items, f) do
+  def check(tree1, tree2, f) do
+    if tree1.less == tree2.less do
+      f.()
+    else
+      raise ArgumentError, message: "TreeMaps created with different less function"
+    end
+  end
+
+  @spec intersect_rec(iterator_result({key, value}), iterator_result({key, value}), [{key, value}], compare(key), resolve(key, value)) :: t(key, value) when key: var, value: var
+  def intersect_rec(:done, _, items, _, _), do: build(items, true)
+  def intersect_rec(_, :done, items, _, _), do: build(items, true)
+  def intersect_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter} = b, items, less, f) do
     cond do
-      a_k > b_k -> intersect_rec(a_iter.(), b, items, f)
-      a_k < b_k -> intersect_rec(a, b_iter.(), items, f)
-      true -> intersect_rec(a_iter.(), b_iter.(), [{a_k, f.(a_k, a_v, b_v)} | items], f)
+      less.(b_k, a_k) -> intersect_rec(a_iter.(), b, items, less, f)
+      less.(a_k, b_k) -> intersect_rec(a, b_iter.(), items, less, f)
+      true -> intersect_rec(a_iter.(), b_iter.(), [{a_k, f.(a_k, a_v, b_v)} | items], less, f)
     end
   end
 
@@ -462,17 +476,18 @@ defmodule TreeMap do
       false
   """
   @spec subset?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def subset?(tree1, tree2), do: subset_rec(preorder(tree1).(), preorder(tree2).())
+  def subset?(tree1, tree2), do: check(tree1, tree2, fn -> subset_rec(preorder(tree1).(), preorder(tree2).(), tree1.less) end)
 
-  @spec subset_rec(iterator_result({key, value}), iterator_result({key, value})) :: boolean() when key: var, value: var
-  def subset_rec(:done, _), do: true
-  def subset_rec(_, :done), do: false
-  def subset_rec({a_item, _}, {b_item, _}) when a_item < b_item, do: false
-
-  def subset_rec({a_item, _} = a, {b_item, b_iter}) when a_item > b_item,
-    do: subset_rec(a, b_iter.())
-
-  def subset_rec({_, a_iter}, {_, b_iter}), do: subset_rec(a_iter.(), b_iter.())
+  @spec subset_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  def subset_rec(:done, _, _), do: true
+  def subset_rec(_, :done, _), do: false
+  def subset_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter}, less) do
+    cond do
+    less.(a_k, b_k) -> false
+    less.(b_k, a_k) -> subset_rec(a, b_iter.(), less)
+    true -> a_v == b_v and subset_rec(a_iter.(), b_iter.(), less)
+    end
+  end
 
   @doc """
   Generate the union of two sets
@@ -487,16 +502,15 @@ defmodule TreeMap do
       iex> TreeMap.union(TreeMap.new([{1, :a},{2, :b}]), TreeMap.new([{2, :b},{3, :c}])) |> to_string
       "#TreeMap<1 => a;2 => b;3 => c;>"
   """
-  def union(tree1, tree2, f \\ fn _k, _v1, v2 -> v2 end), do: union_rec(postorder(tree1).(), postorder(tree2).(), [], f)
+  def union(tree1, tree2, resolve \\ fn _k, _v1, v2 -> v2 end), do: check(tree1, tree2, fn -> union_rec(postorder(tree1).(), postorder(tree2).(), [], resolve, tree1.less) end)
 
-
-  def union_rec(:done, b, items, _f), do: finish(b, items)
-  def union_rec(a, :done, items, _f), do: finish(a, items)
-  def union_rec({{a_k, a_v} = a_item, a_iter} = a, {{b_k, b_v} = b_item, b_iter} = b, items, f) do
+  def union_rec(:done, b, items, _f, _), do: finish(b, items)
+  def union_rec(a, :done, items, _f, _), do: finish(a, items)
+  def union_rec({{a_k, a_v} = a_item, a_iter} = a, {{b_k, b_v} = b_item, b_iter} = b, items, resolve, less) do
     cond do
-      a_k > b_k -> union_rec(a_iter.(), b, [a_item | items], f)
-      a_k < b_k -> union_rec(a, b_iter.(), [b_item | items], f)
-      true -> union_rec(a_iter.(), b_iter.(), [{a_k, f.(a_k, a_v, b_v)} | items], f)
+      less.(b_k, a_k) -> union_rec(a_iter.(), b, [a_item | items], resolve, less)
+      less.(a_k, b_k) -> union_rec(a, b_iter.(), [b_item | items], resolve, less)
+      true -> union_rec(a_iter.(), b_iter.(), [{a_k, resolve.(a_k, a_v, b_v)} | items], resolve, less)
     end
   end
 
@@ -584,18 +598,18 @@ defmodule TreeMap do
     end
   end
 
-  def fetch(t, k), do: fetch_rec?(t.root, k)
+  def fetch(t, k), do: fetch_rec?(t.root, k, t.less)
   def fetch!(t, k) do
     case fetch(t,k) do
-    :error -> raise(KeyError)
+    :error -> raise KeyError
     {:ok, value} -> value
     end
   end
-  def fetch_rec?(t, k) do
+  def fetch_rec?(t, k, less) do
     cond do
       is_nil(t) -> :error
-      k < key(t) -> fetch_rec?(left(t), k)
-      k > key(t) -> fetch_rec?(right(t), k)
+      less.(k, key(t)) -> fetch_rec?(left(t), k, less)
+      less.(key(t), k) -> fetch_rec?(right(t), k, less)
       true -> {:ok, value(t)}
     end
   end
@@ -673,13 +687,13 @@ defmodule TreeMap do
 
   end
 
-  def has_key?(tree, key), do: has_key_rec?(tree.root, key)
+  def has_key?(tree, key), do: has_key_rec?(tree.root, key, tree.less)
 
-  def has_key_rec?(t, k) do
+  def has_key_rec?(t, k, less) do
     cond do
       is_nil(t) -> false
-      k < key(t) -> has_key_rec?(left(t), k)
-      k > key(t) -> has_key_rec?(right(t), k)
+      less.(k, key(t)) -> has_key_rec?(left(t), k, less)
+      less.(key(t), k) -> has_key_rec?(right(t), k, less)
       true -> true
     end
   end
