@@ -29,7 +29,7 @@ defimpl Enumerable, for: TreeMap do
       iex> TreeMap.new([{2, :d}]) |> Enumerable.member?({2, :c})
       {:ok, false}
   """
-  def member?(%TreeMap{root: root}, {k, v}), do: {:ok, TreeMap.get_rec?(root, k) == v}
+  def member?(t, {k, v}), do: {:ok, TreeMap.fetch(t, k) == {:ok, v}}
 
   @doc """
   Reducer
