@@ -36,6 +36,49 @@ defmodule TreeMap do
 
   @spec wrap(tree(key, value), compare(key)) :: t(key, value) when key: var, value: var
   def wrap(branch, less \\ &Kernel.</2), do: %TreeMap{size: size(branch), root: branch, less: less}
+  @doc """
+  Size of set
+
+  ## Examples
+      iex> TreeMap.size(TreeMap.new(Enum.zip(1..3, 4..6)).root)
+      3
+      iex> TreeMap.size(TreeMap.new().root)
+      0
+  """
+  def size(@empty), do: 0
+  def size(t), do: elem(t, @size)
+
+  @doc """
+  Left branch
+
+  ## Examples
+      iex> TreeMap.left(nil)
+      nil
+      iex> TreeMap.left({nil, 1, 1, nil})
+      nil
+      iex> TreeMap.left({{nil, 1, 1, nil}, 2, 3, {nil, 3, 1, nil}})
+      {nil, 1, 1, nil}
+  """
+   def left(nil), do: @empty
+   def left(t), do: elem(t, @left)
+
+  def key(t), do: elem(t, @key)
+  def value(t), do: elem(t, @value)
+  def item(t), do: {key(t), value(t)}
+
+  @doc """
+  Right branch
+
+  ## Examples
+      iex> TreeMap.right(nil)
+      nil
+      iex> TreeMap.right({nil, 1, :a, 1, nil})
+      nil
+      iex> TreeMap.right({{nil, 1, :a, 1, nil}, 2, :b, 3, {nil, 3, :c, 1, nil}})
+      {nil, 3, :c, 1, nil}
+  """
+  def right(@empty), do: @empty
+  def right(t), do: elem(t, @right)
 
   @spec new() :: t(term(), term())
   def new(), do: wrap(@empty)
@@ -46,7 +89,7 @@ defmodule TreeMap do
 
 
 
-  @spec branch(t(key, value), key, value, t(key, value)) :: node(key, value) when key: var, value: var
+  @spec branch(tree(key, value), key, value, tree(key, value)) :: node(key, value) when key: var, value: var
   def branch(left, key, value, right), do: {left, key, value, 1 + size(left) + size(right), right}
 
   @spec leaf(key, value) :: node(key, value) when key: var, value: var
@@ -56,7 +99,17 @@ defmodule TreeMap do
   def put_left(t, left), do: t |> put_elem(@left, left) |> fix_size()
   def put_right(t, right), do: t |> put_elem(@right, right) |> fix_size()
 
-  def put_key(t, key), do: t |> put_elem(@key, key)
+  @doc """
+  Right branch
+
+  ## Examples
+      iex> TreeMap.right(nil)
+      nil
+      iex> TreeMap.right({nil, 1, :a, 1, nil})
+      nil
+      iex> TreeMap.right({{nil, 1, :a, 1, nil}, 2, :b, 3, {nil, 3, :c, 1, nil}})
+      {
+    def put_key(t, key), do: t |> put_elem(@key, key)
   def put_value(t, value), do: t |> put_elem(@value, value)
 
   @doc """
@@ -135,43 +188,44 @@ defmodule TreeMap do
       iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> TreeMap.build(true) |> TreeMap.preorder()
       ...> {item, iter} = iter.()
       ...> item
-      {1, :a}
+      {0, {1, :a}}
       iex> {item, iter} = iter.()
       ...> item
-      {2, :b}
+      {1, {2, :b}}
       iex> {item, iter} = iter.()
       ...> item
-      {3, :c}
+      {2, {3, :c}}
       iex> {item, iter} = iter.()
       ...> item
-      {4, :d}
+      {3, {4, :d}}
       iex> {item, iter} = iter.()
       ...> item
-      {5, :e}
+      {4, {5, :e}}
       iex> {item, iter} = iter.()
       ...> item
-      {6, :f}
+      {5, {6, :f}}
       iex> {item, iter} = iter.()
       ...> item
-      {7, :g}
+      {6, {7, :g}}
       iex> iter.()
       :done
   """
 
+  @type rank :: non_neg_integer()
   @type iterator(item) :: (-> iterator_result(item))
-  @type iterator_result(item) :: :done | {item, iterator(item)}
+  @type iterator_result(item) :: :done | {{rank(), item}, iterator(item)}
 
   @spec preorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
-  def preorder(%TreeMap{root: root}), do: fn -> preorder_next(root, []) end
+  def preorder(t), do: fn -> preorder_next(t.root, [], 0) end
 
-  @spec preorder_next(tree(key, value), [{{key, value}, t(key, value)}]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
-  def preorder_next(@empty, []), do: :done
+  @spec preorder_next(tree(key, value), [{rank, {key, value}, t(key, value)}], rank) :: :done | {{rank, {key, value}}, iterator({key, value})} when key: var, value: var
+  def preorder_next(@empty, [], _), do: :done
 
-  def preorder_next(@empty, [{item, right} | stack]),
-    do: {item, fn -> preorder_next(right, stack) end}
+  def preorder_next(@empty, [{rank, item, right} | stack], _),
+    do: {{rank, item}, fn -> preorder_next(right, stack, rank+1) end}
 
-  def preorder_next(t, stack),
-    do: preorder_next(left(t), [{item(t), right(t)} | stack])
+  def preorder_next(t, stack, n),
+    do: preorder_next(left(t), [{n + size(left(t)), item(t), right(t)} | stack], n)
 
   @doc """
   Post order iteration over a TreeMap
@@ -367,34 +421,6 @@ defmodule TreeMap do
   end
 
   @doc """
-  Tests two sets have distinct members
-
-  ## Examples
-      iex> TreeMap.disjoint?(TreeMap.new([{1, :a}, {2, :b}]), TreeMap.new([{1, :a}, {2, :b}]))
-      false
-      iex> TreeMap.disjoint?(TreeMap.new([{1, :a}]), TreeMap.new([{2, :b}]))
-      true
-      iex> TreeMap.disjoint?(TreeMap.new([{2, :b}]), TreeMap.new([{1, :a}]))
-      true
-      iex> TreeMap.disjoint?(TreeMap.new([{1, :a}, {2, :b}]), TreeMap.new([{2, :b}, {3, :c}]))
-      false
-  """
-  @spec disjoint?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def disjoint?(tree1, tree2), do: check(tree1, tree2, fn -> disjoint_rec(preorder(tree1).(), preorder(tree2).(), tree1.less) end)
-
-  @spec disjoint_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
-  def disjoint_rec(:done, _, _), do: true
-  def disjoint_rec(_, :done, _), do: true
-
-  def disjoint_rec({{a_k, _}, a_iter} = a, {{b_k, _}, b_iter} = b, less) do
-    cond do
-    less.(a_k, b_k) -> disjoint_rec(a_iter.(), b, less)
-    less.(b_k, a_k) -> disjoint_rec(a, b_iter.(), less)
-    true -> false
-    end
-  end
-
-  @doc """
   Tests two sets have the same members
 
   ## Examples
@@ -518,50 +544,6 @@ defmodule TreeMap do
   def finish(:done, items), do: build(items, true)
   def finish({item, iter}, items), do: finish(iter.(), [item | items])
 
-  @doc """
-  Size of set
-
-  ## Examples
-      iex> TreeMap.size(TreeMap.new(Enum.zip(1..3, 4..6)))
-      3
-      iex> TreeMap.size(TreeMap.new())
-      0
-  """
-  def size(%TreeMap{size: size}), do: size
-  def size(@empty), do: 0
-  def size(t), do: elem(t, @size)
-
-  @doc """
-  Left branch
-
-  ## Examples
-      iex> TreeMap.left(nil)
-      nil
-      iex> TreeMap.left({nil, 1, 1, nil})
-      nil
-      iex> TreeMap.left({{nil, 1, 1, nil}, 2, 3, {nil, 3, 1, nil}})
-      {nil, 1, 1, nil}
-  """
-   def left(nil), do: @empty
-   def left(t), do: elem(t, @left)
-
-  def key(t), do: elem(t, @key)
-  def value(t), do: elem(t, @value)
-  def item(t), do: {key(t), value(t)}
-
-  @doc """
-  Right branch
-
-  ## Examples
-      iex> TreeMap.right(nil)
-      nil
-      iex> TreeMap.right({nil, 1, :a, 1, nil})
-      nil
-      iex> TreeMap.right({{nil, 1, :a, 1, nil}, 2, :b, 3, {nil, 3, :c, 1, nil}})
-      {nil, 3, :c, 1, nil}
-  """
-  def right(@empty), do: @empty
-  def right(t), do: elem(t, @right)
 
   @doc """
   Check for empty node
