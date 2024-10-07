@@ -99,17 +99,8 @@ defmodule TreeMap do
   def put_left(t, left), do: t |> put_elem(@left, left) |> fix_size()
   def put_right(t, right), do: t |> put_elem(@right, right) |> fix_size()
 
-  @doc """
-  Right branch
 
-  ## Examples
-      iex> TreeMap.right(nil)
-      nil
-      iex> TreeMap.right({nil, 1, :a, 1, nil})
-      nil
-      iex> TreeMap.right({{nil, 1, :a, 1, nil}, 2, :b, 3, {nil, 3, :c, 1, nil}})
-      {
-    def put_key(t, key), do: t |> put_elem(@key, key)
+  def put_key(t, key), do: t |> put_elem(@key, key)
   def put_value(t, value), do: t |> put_elem(@value, value)
 
   @doc """
@@ -188,44 +179,44 @@ defmodule TreeMap do
       iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> TreeMap.build(true) |> TreeMap.preorder()
       ...> {item, iter} = iter.()
       ...> item
-      {0, {1, :a}}
+      {1, :a}
       iex> {item, iter} = iter.()
       ...> item
-      {1, {2, :b}}
+      {2, :b}
       iex> {item, iter} = iter.()
       ...> item
-      {2, {3, :c}}
+      {3, :c}
       iex> {item, iter} = iter.()
       ...> item
-      {3, {4, :d}}
+      {4, :d}
       iex> {item, iter} = iter.()
       ...> item
-      {4, {5, :e}}
+      {5, :e}
       iex> {item, iter} = iter.()
       ...> item
-      {5, {6, :f}}
+      {6, :f}
       iex> {item, iter} = iter.()
       ...> item
-      {6, {7, :g}}
+      {7, :g}
       iex> iter.()
       :done
   """
 
   @type rank :: non_neg_integer()
   @type iterator(item) :: (-> iterator_result(item))
-  @type iterator_result(item) :: :done | {{rank(), item}, iterator(item)}
+  @type iterator_result(item) :: :done | {item, iterator(item)}
 
   @spec preorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
-  def preorder(t), do: fn -> preorder_next(t.root, [], 0) end
+  def preorder(t), do: fn -> preorder_next(t.root, []) end
 
-  @spec preorder_next(tree(key, value), [{rank, {key, value}, t(key, value)}], rank) :: :done | {{rank, {key, value}}, iterator({key, value})} when key: var, value: var
-  def preorder_next(@empty, [], _), do: :done
+  @spec preorder_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
+  def preorder_next(@empty, []), do: :done
 
-  def preorder_next(@empty, [{rank, item, right} | stack], _),
-    do: {{rank, item}, fn -> preorder_next(right, stack, rank+1) end}
+  def preorder_next(@empty, [t | stack]),
+    do: {item(t), fn -> preorder_next(right(t), stack) end}
 
-  def preorder_next(t, stack, n),
-    do: preorder_next(left(t), [{n + size(left(t)), item(t), right(t)} | stack], n)
+  def preorder_next(t, stack),
+    do: preorder_next(left(t), [t | stack])
 
   @doc """
   Post order iteration over a TreeMap
@@ -259,14 +250,14 @@ defmodule TreeMap do
  @spec postorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
   def postorder(%TreeMap{root: root}), do: fn -> postorder_next(root, []) end
 
-  @spec postorder_next(tree(key, value), [{t(key, value), {key, value}}]) :: iterator_result({key, value}) when key: var, value: var
+  @spec postorder_next(tree(key, value), [t(key, value)]) :: iterator_result({key, value}) when key: var, value: var
   def postorder_next(@empty, []), do: :done
 
-  def postorder_next(@empty, [{left, item} | stack]),
-    do: {item, fn -> postorder_next(left, stack) end}
+  def postorder_next(@empty, [t | stack]),
+    do: {item(t), fn -> postorder_next(left(t), stack) end}
 
-  def postorder_next({left, k, v, _, right}, stack),
-    do: postorder_next(right, [{left, {k, v}} | stack])
+  def postorder_next(t, stack),
+    do: postorder_next(right(t), [t | stack])
 
   @doc """
   Depth first iteration over a TreeMap
