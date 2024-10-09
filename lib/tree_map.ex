@@ -87,21 +87,16 @@ defmodule TreeMap do
   @spec new(Enumerable.t({key, value}), compare(key)) :: t(key, value) when key: var, value: var
   def new(enumerable, less \\ &Kernel.</2), do: build(enumerable, less)
 
-
-
   @spec branch(tree(key, value), key, value, tree(key, value)) :: node(key, value) when key: var, value: var
   def branch(left, key, value, right), do: {left, key, value, 1 + size(left) + size(right), right}
 
   @spec leaf(key, value) :: node(key, value) when key: var, value: var
   def leaf(key, value), do: branch(@empty, key, value, @empty)
   @spec fix_size(node(key, value)) :: node(key, value) when key: var, value: var
-  def fix_size(t), do: put_elem(t, @size, 1 + size(left(t)) + size(right(t)))
-  def put_left(t, left), do: t |> put_elem(@left, left) |> fix_size()
-  def put_right(t, right), do: t |> put_elem(@right, right) |> fix_size()
-
-
-  def put_key(t, key), do: t |> put_elem(@key, key)
-  def put_value(t, value), do: t |> put_elem(@value, value)
+  defp fix_size(t), do: put_elem(t, @size, 1 + size(left(t)) + size(right(t)))
+  defp put_left(t, left), do: t |> put_elem(@left, left) |> fix_size()
+  defp put_right(t, right), do: t |> put_elem(@right, right) |> fix_size()
+  defp put_value(t, value), do: t |> put_elem(@value, value)
 
   @doc """
   Inserts item into a TreeMap
@@ -119,7 +114,7 @@ defmodule TreeMap do
       iex> TreeMap.new() |> TreeMap.put(1,:a) |> TreeMap.put(1,:b) |> to_string()
       "#TreeMap<1 => b;>"
   """
-  def put(%TreeMap{root: root, less: less}, key, value), do: root |> put_rec(key, value, less) |> wrap
+  def put(%TreeMap{root: root, less: less}, key, value), do: root |> put_rec(key, value, less) |> wrap(less)
 
   @spec put_rec(tree(key, value), key, value, compare(key)) :: tree(key, value) when key: var, value: var
   def put_rec(t, k, v, less) do
@@ -381,8 +376,14 @@ defmodule TreeMap do
   def max({_, k, v, _, @empty}), do: {k, v}
   def max({_, _, _, _, right}), do: max(right)
   def max(nil), do: nil
+  @doc """
+  Drop keys from a MapTree
 
-  def drop(t, keys), do: keys |> Enum.reduce(t.root, fn key, t -> delete_rec(t, key, t.less) end) |> wrap()
+  ## Examples
+      iex> 1..7 |> Enum.zip(1..7) |> TreeMap.new() |> TreeMap.drop(1..4) |> to_string
+      "#TreeMap<5 => 5;6 => 6;7 => 7;>"
+  """
+  def drop(tm, keys), do: keys |> Enum.reduce(tm.root, fn key, t -> delete_rec(t, key, tm.less) end) |> wrap(tm.less)
 
   @doc """
   Generate the difference of two sets
@@ -400,8 +401,8 @@ defmodule TreeMap do
   @spec difference(t(key, value), t(key, value)) :: t(key, value) when key: var, value: var
   def difference(tree1, tree2), do: check(tree1, tree2, fn -> difference_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less) end)
 
-  def difference_rec(:done, _, items, _), do: build(items, true)
-  def difference_rec(a, :done, items, _), do: finish(a, items)
+  def difference_rec(:done, _, items, less), do: build(items, less, true)
+  def difference_rec(a, :done, items, less), do: finish(a, items, less)
 
   def difference_rec({{a_k, _} = a_item, a_iter} = a, {{b_k, _}, b_iter} = b, items, less) do
     cond do
@@ -425,12 +426,13 @@ defmodule TreeMap do
       false
       iex> TreeMap.equal?(TreeMap.new(Enum.zip(1..7, 11..17)), TreeMap.new(Enum.zip(1..7, 11..17)))
       true
+      iex> TreeMap.equal?(TreeMap.new([{1, :a}], fn x, y -> 2*x < 2*y end), TreeMap.new([{1, :a}], fn x, y -> 3*x < 3*y end))
+      false
   """
   @spec equal?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def equal?(%TreeMap{} = tree1, %TreeMap{} = tree2), do:
-    tree1.less == tree2.less and equal_rec(preorder(tree1).(), preorder(tree2).(), tree1.less)
-
-  def equal?(_tree1, _tree2), do: false
+  def equal?(%TreeMap{} = tree1, %TreeMap{} = tree2) do
+    tree1.less === tree2.less and equal_rec(preorder(tree1).(), preorder(tree2).(), tree1.less)
+  end
 
   @spec equal_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
   def equal_rec(:done, :done, _), do: true
@@ -467,8 +469,8 @@ defmodule TreeMap do
   end
 
   @spec intersect_rec(iterator_result({key, value}), iterator_result({key, value}), [{key, value}], compare(key), resolve(key, value)) :: t(key, value) when key: var, value: var
-  def intersect_rec(:done, _, items, _, _), do: build(items, true)
-  def intersect_rec(_, :done, items, _, _), do: build(items, true)
+  def intersect_rec(:done, _, items, less, _), do: build(items, less, true)
+  def intersect_rec(_, :done, items, less, _), do: build(items, less, true)
   def intersect_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter} = b, items, less, f) do
     cond do
       less.(b_k, a_k) -> intersect_rec(a_iter.(), b, items, less, f)
@@ -521,8 +523,8 @@ defmodule TreeMap do
   """
   def union(tree1, tree2, resolve \\ fn _k, _v1, v2 -> v2 end), do: check(tree1, tree2, fn -> union_rec(postorder(tree1).(), postorder(tree2).(), [], resolve, tree1.less) end)
 
-  def union_rec(:done, b, items, _f, _), do: finish(b, items)
-  def union_rec(a, :done, items, _f, _), do: finish(a, items)
+  def union_rec(:done, b, items, _f, less), do: finish(b, items, less)
+  def union_rec(a, :done, items, _f, less), do: finish(a, items, less)
   def union_rec({{a_k, a_v} = a_item, a_iter} = a, {{b_k, b_v} = b_item, b_iter} = b, items, resolve, less) do
     cond do
       less.(b_k, a_k) -> union_rec(a_iter.(), b, [a_item | items], resolve, less)
@@ -531,9 +533,9 @@ defmodule TreeMap do
     end
   end
 
-  @spec finish(iterator_result({key, value}), [{key, value}]) :: t(key, value) when key: var, value: var
-  def finish(:done, items), do: build(items, true)
-  def finish({item, iter}, items), do: finish(iter.(), [item | items])
+  @spec finish(iterator_result({key, value}), [{key, value}], compare(key)) :: t(key, value) when key: var, value: var
+  def finish(:done, items, less), do: build(items, less, true)
+  def finish({item, iter}, items, less), do: finish(iter.(), [item | items], less)
 
 
   @doc """
@@ -548,7 +550,7 @@ defmodule TreeMap do
   def empty?(%TreeMap{root: root}), do: root == @empty
 
   @doc """
-  Tests membership
+  Get the value for a key
 
   ## Examples
       iex> TreeMap.get(TreeMap.new([{2, :b}]), 1, :a)
@@ -561,8 +563,8 @@ defmodule TreeMap do
       nil
   """
 
-
   def member?(t, {k, v}), do: fetch(t, k) == {:ok, v}
+  def member?(_, _), do: false
 
   def get(t, k, default \\ nil) do
     case fetch(t, k) do
@@ -571,19 +573,43 @@ defmodule TreeMap do
     end
   end
 
+    @doc """
+  Tests membership
+
+  ## Examples
+      iex> TreeMap.member?(TreeMap.new([{2, :b}]), {1, :b})
+      false
+      iex> TreeMap.member?(TreeMap.new(), 1)
+      false
+      iex> TreeMap.member?(TreeMap.new([{2, :b}]), {2, :b})
+      true
+  """
+
   def fetch(t, k), do: fetch_rec?(t.root, k, t.less)
-  def fetch!(t, k) do
-    case fetch(t,k) do
-    :error -> raise KeyError
-    {:ok, value} -> value
-    end
-  end
+
   def fetch_rec?(t, k, less) do
     cond do
       is_nil(t) -> :error
       less.(k, key(t)) -> fetch_rec?(left(t), k, less)
       less.(key(t), k) -> fetch_rec?(right(t), k, less)
       true -> {:ok, value(t)}
+    end
+  end
+
+
+  @doc """
+  Fetch a key you expect to be there
+
+  ## Examples
+      iex> TreeMap.fetch!(TreeMap.new([{2, :b}]), 2)
+      :b
+      iex> TreeMap.fetch!(TreeMap.new([{2, :b}]), 1)
+      ** (KeyError) key 1 not found
+  """
+  def fetch!(t, k) do
+    case fetch(t,k) do
+    :error -> raise KeyError, key: k
+    {:ok, value} -> value
     end
   end
   @doc """
@@ -596,10 +622,10 @@ defmodule TreeMap do
       iex> TreeMap.build([{2, :b}, {1, :a}, {3, :c}]) |> to_string
       "#TreeMap<1 => a;2 => b;3 => c;>"
   """
-  def build(items, sorted \\ false) do
+  def build(items, less \\ &Kernel.</2, sorted \\ false) do
     if(sorted, do: items, else: Enum.sort(items))
     |> build_rec
-    |> wrap
+    |> wrap(less)
   end
 
   @spec build_rec([{key, value}]) :: tree(key, value) when key: var, value: var
@@ -614,15 +640,87 @@ defmodule TreeMap do
     {build_rec(items, left_n), k, v, n, build_rec(right, right_n)}
   end
 
+  @doc """
+  Converts a MapTree to a sorted list of pairs
+
+  ## Examples
+
+      iex> 1..7 |> Enum.zip(1..7) |> TreeMap.new() |> TreeMap.to_list() |> Enum.unzip()
+      {[1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7]}
+  """
   def to_list(t), do: to_list_rec(postorder(t).(), [])
 
   def to_list_rec(:done, acc), do: acc
   def to_list_rec({item, iter}, acc), do: to_list_rec(iter.(), [item | acc])
 
-  def filter(t, fun), do: t |> to_list() |> Enum.filter(fun) |> build(true)
+  @doc """
+  Returns a TreeMap containing only those pairs from `map`
+  for which `fun` returns a truthy value.
 
-  def from_keys(keys, value), do: keys |> Enum.map(&{&1, value}) |> new()
+  `fun` receives the key and value of each of the
+  elements in the map as a key-value pair.
 
+  See also `reject/2` which discards all elements where the
+  function returns a truthy value.
+
+  > #### Performance considerations {: .tip}
+  >
+  > If you find yourself doing multiple calls to `Map.filter/2`
+  > and `Map.reject/2` in a pipeline, it is likely more efficient
+  > to use `Enum.map/2` and `Enum.filter/2` instead and convert to
+  > a map at the end using `Map.new/1`.
+
+  ## Examples
+
+      iex> [{:one, 1}, {:two, 2}, {:three, 3}] |> TreeMap.new() |> TreeMap.filter(fn {_key, val} -> rem(val, 2) == 1 end) |> to_string()
+      "#TreeMap<one => 1;three => 3;>"
+
+  """
+  def filter(%TreeMap{} = t, fun), do: t |> to_list() |> Enum.filter(fun) |> build(t.less, true)
+
+  @doc """
+  Builds a map from the given `keys` and the fixed `value`.
+
+  ## Examples
+
+      iex> TreeMap.from_keys([1, 2, 3], :number) |> to_string()
+      "#TreeMap<1 => number;2 => number;3 => number;>"
+
+  """
+  def from_keys(keys, value, less \\ &Kernel.</2), do: keys |> Enum.map(&{&1, value}) |> build(less, false)
+
+  @doc """
+  Gets the value from `key` and updates it, all in one pass.
+
+  `fun` is called with the current value under `key` in `map` (or `nil` if `key`
+  is not present in `map`) and must return a two-element tuple: the current value
+  (the retrieved value, which can be operated on before being returned) and the
+  new value to be stored under `key` in the resulting new map. `fun` may also
+  return `:pop`, which means the current value shall be removed from `map` and
+  returned (making this function behave like `Map.pop(map, key)`).
+
+  The returned value is a two-element tuple with the current value returned by
+  `fun` and a new map with the updated value under `key`.
+
+  ## Examples
+
+      iex> TreeMap.get_and_update(TreeMap.new([{:a, 1}]), :a, fn current_value ->
+      ...>   {current_value, "new value!"}
+      ...> end)
+      {1, %TreeMap{less: &:erlang.</2, root: {nil, :a, "new value!", 1, nil}, size: 1}}
+
+      iex> TreeMap.get_and_update(TreeMap.new([{:a, 1}]), :b, fn current_value ->
+      ...>   {current_value, "new value!"}
+      ...> end)
+      {nil, %TreeMap{less: &:erlang.</2, root: {nil, :a, 1, 2, {nil, :b, "new value!", 1, nil}}, size: 2}}
+
+      iex> TreeMap.get_and_update(TreeMap.new([{:a, 1}]), :a, fn _ -> :pop end)
+      {1, %TreeMap{less: &:erlang.</2, root: nil, size: 0}}
+
+      iex> TreeMap.get_and_update(TreeMap.new([{:a, 1}]), :b, fn _ -> :pop end)
+      {nil, %TreeMap{less: &:erlang.</2, root: {nil, :a, 1, 1, nil}, size: 1}}
+
+  """
   def get_and_update(tree, key, fun) when is_function(fun, 1) do
     current = get(tree, key)
     case fun.(current) do
@@ -637,12 +735,33 @@ defmodule TreeMap do
     end
   end
 
+  @doc """
+  Gets the value from `key` and updates it, all in one pass. Raises if there is no `key`.
+
+  Behaves exactly like `get_and_update/3`, but raises a `KeyError` exception if
+  `key` is not present in `map`.
+
+  ## Examples
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:a, fn v -> {v, 2} end) |> elem(0)
+      1
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:a, fn v -> {v, 2} end) |> elem(1) |> to_string()
+      "#TreeMap<a => 2;>"
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:b, fn v -> {v, :c} end)
+      ** (KeyError) key :b not found
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:a, fn _ -> :pop end) |> elem(0)
+      1
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:a, fn _ -> :pop end) |> elem(1) |> to_string()
+      "#TreeMap<>"
+
+      iex> TreeMap.new([{:a, 1}]) |> TreeMap.get_and_update!(:a, fn _ -> :fred end) |> elem(1) |> to_string()
+      ** (RuntimeError) the given function must return a two-element tuple or :pop, got: :fred
+  """
   def get_and_update!(map, key, fun) when is_function(fun, 1) do
     value = fetch!(map, key)
 
     case fun.(value) do
       {get, update} ->
-        {get, %{map | key => update}}
+        {get, TreeMap.put(map, key, update)}
 
       :pop ->
         {value, delete(map, key)}
@@ -713,7 +832,7 @@ defmodule TreeMap do
     end
   end
 
-  def reject(tree, fun), do: tree |> to_list() |> Enum.reject(fun) |> build(true)
+  def reject(tree, fun), do: tree |> to_list() |> Enum.reject(fun) |> build(tree.less, true)
 
   def replace(tree, key, value) do
     if has_key?(tree, key) do
