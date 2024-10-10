@@ -1,4 +1,4 @@
 defmodule TreeMapTest do
   use ExUnit.Case
-  doctest TreeMap
+  doctest TreeMap, import: true
 end
