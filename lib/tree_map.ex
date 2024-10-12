@@ -32,6 +32,9 @@ defmodule TreeMap do
   @type compare(key) :: (key, key -> boolean())
   @type resolve(key, value) :: (key, value, value -> value)
   @type t(key, value) :: %__MODULE__{size: non_neg_integer(), root: tree(key, value), less: compare(key)}
+  @type rank :: non_neg_integer()
+  @type iterator(item) :: (-> iterator_result(item))
+  @type iterator_result(item) :: :done | {item, iterator(item)}
 
   @spec wrap(tree(key, value), compare(key)) :: t(key, value) when key: var, value: var
   def wrap(branch, less \\ &Kernel.</2), do: %TreeMap{size: size(branch), root: branch, less: less}
@@ -212,10 +215,6 @@ defmodule TreeMap do
       :done
   """
 
-  @type rank :: non_neg_integer()
-  @type iterator(item) :: (-> iterator_result(item))
-  @type iterator_result(item) :: :done | {item, iterator(item)}
-
   @spec preorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
   def preorder(t), do: fn -> preorder_next(t.root, []) end
 
@@ -227,6 +226,45 @@ defmodule TreeMap do
 
   def preorder_next(t, stack),
     do: preorder_next(left(t), [t | stack])
+
+  @doc """
+  create a TreeMap iterator starting from at a given key
+
+  ## Examples
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(true) |> from(4)
+      iex> iter.()
+      :foo
+      iex> {item, iter} = iter.()
+      ...> item
+      {4, :d}
+      iex> {item, iter} = iter.()
+      ...> item
+      {5, :e}
+      iex> {item, iter} = iter.()
+      ...> item
+      {6, :f}
+      iex> {item, iter} = iter.()
+      ...> item
+      {7, :g}
+      iex> iter.()
+      :done
+  """
+  @spec from(t(key, value), key) :: iterator({key, value}) when key: var, value: var
+  def from(t, key), do: fn -> from_rec(t.root, [], key, t.less) end
+
+  @spec from_rec(tree(key, value), [{key, value}], key, compare(key)) :: iterator_result({key, value}) when key: var, value: var
+  def from_rec(t, stack, key, less) do
+    cond do
+      t == @empty ->
+        case stack do
+          [] -> :done
+          [x | xs] -> {item(x), fn -> preorder_next(right(x), xs) end}
+        end
+      less.(key, item(t)) -> from_rec(left(t), [t | stack], key, less)
+      less.(item(t), key) -> from_rec(right(t), stack, key, less)
+      true -> {item(t), fn -> preorder_next(right(t), stack) end}
+    end
+  end
 
   @doc """
   Post order iteration over a TreeMap
@@ -301,7 +339,7 @@ defmodule TreeMap do
   @spec depth_first(t(key, value)) :: iterator({key, value}) when key: var, value: var
   def depth_first(%TreeMap{root: root}), do: fn -> depth_first_next({[root], []}) end
 
-  @spec depth_first_next({[tree(key,value)], [tree(key, value)]}) :: iterator_result({key, value}) when key: var, value: var
+  @spec depth_first_next({[tree(key, value)], [tree(key, value)]}) :: iterator_result({key, value}) when key: var, value: var
   def depth_first_next({[], []}), do: :done
   def depth_first_next({[], back}), do: depth_first_next({Enum.reverse(back), []})
 
@@ -490,7 +528,7 @@ defmodule TreeMap do
  @spec intersect(t(key, value), t(key, value), resolve(key, value)) :: t(key, value) when key: var, value: var
  def intersect(tree1, tree2, resolve \\ fn _, _, v2 -> v2 end) do
     check(tree1, tree2, fn -> intersect_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less, resolve) end)
-  end
+ end
 
   @doc """
   Checks trees have same less function
@@ -674,7 +712,7 @@ defmodule TreeMap do
   """
   @spec fetch!(t(key, value), key) :: value when key: var, value: var
   def fetch!(t, k) do
-    case fetch(t,k) do
+    case fetch(t, k) do
     :error -> raise KeyError, key: k
     {:ok, value} -> value
     end
