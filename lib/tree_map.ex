@@ -189,7 +189,7 @@ defmodule TreeMap do
   Pre-order iteration over a TreeMap
 
   ## Examples
-      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(true) |> preorder()
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> preorder()
       ...> {item, iter} = iter.()
       ...> item
       {1, :a}
@@ -231,9 +231,8 @@ defmodule TreeMap do
   create a TreeMap iterator starting from at a given key
 
   ## Examples
-      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(true) |> from(4)
-      iex> iter.()
-      :foo
+      iex> tree_map = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true)
+      iex> iter = from(tree_map, 4)
       iex> {item, iter} = iter.()
       ...> item
       {4, :d}
@@ -248,9 +247,59 @@ defmodule TreeMap do
       {7, :g}
       iex> iter.()
       :done
+      iex> iter = from(tree_map, 0)
+      iex> {item, iter} = iter.()
+      ...> item
+      {1, :a}
+      iex> iter = from(tree_map, 8)
+      iex> iter.()
+      :done
   """
   @spec from(t(key, value), key) :: iterator({key, value}) when key: var, value: var
   def from(t, key), do: fn -> from_rec(t.root, [], key, t.less) end
+
+  @doc """
+  TreeMap iterator ending at a given key
+
+  ## Examples
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> from(4) |> until(6)
+      iex> iter.()
+      iex> {item, iter} = iter.()
+      ...> item
+      {4, :d}
+      iex> {item, iter} = iter.()
+      ...> item
+      {5, :e}
+      iex> {item, iter} = iter.()
+      ...> item
+      {6, :f}
+      iex> iter.()
+      :done
+  """
+  @spec until(iterator({key, value}), key, compare(key)) :: iterator({key, value}) when key: var, value: var
+  def until(iter, final_key, less \\ &Kernel.</2) do
+    fn -> {{new_key, _} = new_item , new_iter} = iter.()
+      if less.(final_key, new_key) do
+        :done
+      else
+        {new_item, until(new_iter, final_key, less)}
+      end
+    end
+  end
+
+  @doc """
+  Convert iterator to list
+
+  ## Examples
+      iex> 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> from(4) |> until(6) |> iterator_to_list()
+      [{4, :d}, {5, :e},{6, :f}]
+  """
+  @spec iterator_to_list(iterator(item)) :: [item] when item: var
+  def iterator_to_list(iter), do: iterator_to_list_rec(iter.(), [])
+
+  @spec iterator_to_list_rec(iterator_result(item), [item]) :: [item] when item: var
+  def iterator_to_list_rec(:done, items), do: Enum.reverse(items)
+  def iterator_to_list_rec({item, iter}, items), do: iterator_to_list_rec(iter.(), [item | items])
 
   @spec from_rec(tree(key, value), [{key, value}], key, compare(key)) :: iterator_result({key, value}) when key: var, value: var
   def from_rec(t, stack, key, less) do
@@ -260,8 +309,8 @@ defmodule TreeMap do
           [] -> :done
           [x | xs] -> {item(x), fn -> preorder_next(right(x), xs) end}
         end
-      less.(key, item(t)) -> from_rec(left(t), [t | stack], key, less)
-      less.(item(t), key) -> from_rec(right(t), stack, key, less)
+      less.(key, key(t)) -> from_rec(left(t), [t | stack], key, less)
+      less.(key(t), key) -> from_rec(right(t), stack, key, less)
       true -> {item(t), fn -> preorder_next(right(t), stack) end}
     end
   end
@@ -270,7 +319,7 @@ defmodule TreeMap do
   Post order iteration over a TreeMap
 
   ## Examples
-      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(true) |> postorder
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> postorder
       ...> {item, iter} = iter.()
       ...> item
       {7, :g}
@@ -311,7 +360,7 @@ defmodule TreeMap do
   Depth first iteration over a TreeMap
 
   ## Examples
-      iex> iter = build(Enum.zip(1..7, ~w(a b c d e f g)a), true) |> depth_first()
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> depth_first()
       ...> {item, iter} = iter.()
       ...> item
       {4, :d}
