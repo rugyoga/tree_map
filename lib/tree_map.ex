@@ -30,6 +30,7 @@ defmodule TreeMap do
   @type node(key, value) :: {tree(key, value), key, value, size(), tree(key, value)}
   @type tree(key, value) :: node(key, value) | nil
   @type compare(key) :: (key, key -> boolean())
+  @type distance(key, numeric) :: (key, key -> numeric)
   @type resolve(key, value) :: (key, value, value -> value)
   @type t(key, value) :: %__MODULE__{size: non_neg_integer(), root: tree(key, value), less: compare(key)}
   @type rank :: non_neg_integer()
@@ -189,28 +190,28 @@ defmodule TreeMap do
   Pre-order iteration over a TreeMap
 
   ## Examples
-      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> preorder()
+      iex> iter = 1..15//2 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> preorder()
       ...> {item, iter} = iter.()
       ...> item
       {1, :a}
       iex> {item, iter} = iter.()
       ...> item
-      {2, :b}
+      {3, :b}
       iex> {item, iter} = iter.()
       ...> item
-      {3, :c}
+      {5, :c}
       iex> {item, iter} = iter.()
       ...> item
-      {4, :d}
+      {7, :d}
       iex> {item, iter} = iter.()
       ...> item
-      {5, :e}
+      {9, :e}
       iex> {item, iter} = iter.()
       ...> item
-      {6, :f}
+      {11, :f}
       iex> {item, iter} = iter.()
       ...> item
-      {7, :g}
+      {13, :g}
       iex> iter.()
       :done
   """
@@ -220,41 +221,60 @@ defmodule TreeMap do
 
   @spec preorder_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
   def preorder_next(@empty, []), do: :done
+  def preorder_next(@empty, [t | stack]), do: {item(t), fn -> preorder_next(right(t), stack) end}
+  def preorder_next(t, stack), do: preorder_next(left(t), [t | stack])
 
-  def preorder_next(@empty, [t | stack]),
-    do: {item(t), fn -> preorder_next(right(t), stack) end}
+  @doc """
+  Peek at next item in pre order iteration over a TreeMap
 
-  def preorder_next(t, stack),
-    do: preorder_next(left(t), [t | stack])
+  ## Examples
+      iex> preorder_peek(nil, [])
+      :done
+      iex> preorder_peek(nil, [branch(nil, :key, :value, nil)])
+      {:key, :value}
+      iex> preorder_peek(nil, [branch(nil, :key, :value, nil)])
+      {:key, :value}
+  """
+
+@spec preorder_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
+def preorder_peek(@empty, []), do: :done
+def preorder_peek(@empty, [t | _]), do: item(t)
+def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
 
   @doc """
   create a TreeMap iterator starting from at a given key
 
   ## Examples
-      iex> tree_map = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true)
+      iex> tree_map = 1..15//2 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true)
       iex> iter = from(tree_map, 4)
       iex> {item, iter} = iter.()
       ...> item
-      {4, :d}
+      {5, :c}
       iex> {item, iter} = iter.()
       ...> item
-      {5, :e}
+      {7, :d}
       iex> {item, iter} = iter.()
       ...> item
-      {6, :f}
+      {9, :e}
       iex> {item, iter} = iter.()
       ...> item
-      {7, :g}
+      {11, :f}
+      iex> {item, iter} = iter.()
+      ...> item
+      {13, :g}
       iex> iter.()
       :done
       iex> iter = from(tree_map, 0)
-      iex> {item, iter} = iter.()
+      iex> {item, _iter} = iter.()
       ...> item
       {1, :a}
-      iex> iter = from(tree_map, 8)
+      iex> iter = from(tree_map, 14)
       iex> iter.()
       :done
   """
+
+
+
   @spec from(t(key, value), key) :: iterator({key, value}) when key: var, value: var
   def from(t, key), do: fn -> from_rec(t.root, [], key, t.less) end
 
@@ -287,6 +307,41 @@ defmodule TreeMap do
     end
   end
 
+  @spec nearest(t(key, value), key, distance(key, term())) :: iterator({key, value}) when key: var, value: var
+  def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, t.less, distance) end
+
+  @spec nearest_find(tree(key, value), [node(key, value)], key, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  def nearest_find(@empty, [], _, _, _), do: :done
+  def nearest_find(@empty, [t | stack], origin, less, distance) do
+    if less.(origin, key(t)) do
+      nearest_next(preorder_next(right(t), stack) , distance.(origin, key(t)), {item(t), fn -> postorder_next(left(t), stack) end}, origin, distance)
+    else
+      nearest_next(postorder_next(left(t), stack), distance.(origin, key(t)), {item(t), fn -> preorder_next(right(t), stack) end}, origin, distance)
+    end
+  end
+  def nearest_find(t, stack, origin, less, distance) do
+    nearest_find(if(less.(origin, key(t)), do: left(t), else: right(t)), [t | stack], origin, less, distance)
+  end
+
+  @spec nearest_next(iterator_result({key, value}), [node(key, value)], key, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  def nearest_next(:done, post_distance, {post_item, post_iter}, origin, distance), do:
+    {{post_distance, post_item}, fn -> complete_nearest(post_iter.(), origin, distance) end}
+  def nearest_next({{pre_k, _}, _} = pre, post_distance, post, origin, distance), do:
+    nearest_distance(distance.(origin, pre_k), pre, post_distance, post, origin, distance)
+
+  @spec nearest_distance(units, iterator_result({key, value}), units, iterator_result({key, value}), key, distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  def nearest_distance(pre_distance, {pre_item, pre_iter} = pre, post_distance, {post_item, post_iter} = post, origin, distance) do
+    if pre_distance <= post_distance do
+      {{pre_distance, pre_item}, fn -> nearest_next(pre_iter.(), post_distance, post, origin, distance) end}
+    else
+      {{post_distance, post_item}, fn -> nearest_next(post_iter.(), pre_distance, pre, origin, distance) end}
+    end
+  end
+
+  @spec complete_nearest(iterator_result({key, value}), key, distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  def complete_nearest(:done, _, _), do: :done
+  def complete_nearest({{k, _} = item, iter}, origin, distance), do: {{distance.(origin, k), item}, fn -> complete_nearest(iter.(), origin, distance) end}
+
   @doc """
   Convert iterator to list
 
@@ -301,7 +356,7 @@ defmodule TreeMap do
   def iterator_to_list_rec(:done, items), do: Enum.reverse(items)
   def iterator_to_list_rec({item, iter}, items), do: iterator_to_list_rec(iter.(), [item | items])
 
-  @spec from_rec(tree(key, value), [{key, value}], key, compare(key)) :: iterator_result({key, value}) when key: var, value: var
+  @spec from_rec(tree(key, value), [node(key, value)], key, compare(key)) :: iterator_result({key, value}) when key: var, value: var
   def from_rec(t, stack, key, less) do
     cond do
       t == @empty ->
@@ -349,12 +404,25 @@ defmodule TreeMap do
 
   @spec postorder_next(tree(key, value), [t(key, value)]) :: iterator_result({key, value}) when key: var, value: var
   def postorder_next(@empty, []), do: :done
+  def postorder_next(@empty, [t | stack]), do: {item(t), fn -> postorder_next(left(t), stack) end}
+  def postorder_next(t, stack), do: postorder_next(right(t), [t | stack])
 
-  def postorder_next(@empty, [t | stack]),
-    do: {item(t), fn -> postorder_next(left(t), stack) end}
+  @doc """
+  Peek at next item in Post order iteration over a TreeMap
 
-  def postorder_next(t, stack),
-    do: postorder_next(right(t), [t | stack])
+  ## Examples
+      iex> postorder_peek(nil, [])
+      :done
+      iex> postorder_peek(nil, [branch(nil, :key, :value, nil)])
+      {:key, :value}
+      iex> postorder_peek(nil, [branch(nil, :key, :value, nil)])
+      {:key, :value}
+  """
+
+  @spec postorder_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
+  def postorder_peek(@empty, []), do: :done
+  def postorder_peek(@empty, [t | _]), do: item(t)
+  def postorder_peek(t, stack), do: postorder_peek(right(t), [t | stack])
 
   @doc """
   Depth first iteration over a TreeMap
