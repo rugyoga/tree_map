@@ -190,7 +190,7 @@ defmodule TreeMap do
   Pre-order iteration over a TreeMap
 
   ## Examples
-      iex> iter = 1..15//2 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> preorder()
+      iex> iter = 1..15//2 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> forward()
       ...> {item, iter} = iter.()
       ...> item
       {1, :a}
@@ -216,30 +216,30 @@ defmodule TreeMap do
       :done
   """
 
-  @spec preorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
-  def preorder(t), do: fn -> preorder_next(t.root, []) end
+  @spec forward(t(key, value)) :: iterator({key, value}) when key: var, value: var
+  def forward(t), do: fn -> forward_next(t.root, []) end
 
-  @spec preorder_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
-  def preorder_next(@empty, []), do: :done
-  def preorder_next(@empty, [t | stack]), do: {item(t), fn -> preorder_next(right(t), stack) end}
-  def preorder_next(t, stack), do: preorder_next(left(t), [t | stack])
+  @spec forward_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
+  def forward_next(@empty, []), do: :done
+  def forward_next(@empty, [t | stack]), do: {item(t), fn -> forward_next(right(t), stack) end}
+  def forward_next(t, stack), do: forward_next(left(t), [t | stack])
 
   @doc """
   Peek at next item in pre order iteration over a TreeMap
 
   ## Examples
-      iex> preorder_peek(nil, [])
+      iex> forward_peek(nil, [])
       :done
-      iex> preorder_peek(nil, [branch(nil, :key, :value, nil)])
+      iex> forward_peek(nil, [branch(nil, :key, :value, nil)])
       {:key, :value}
-      iex> preorder_peek(nil, [branch(nil, :key, :value, nil)])
+      iex> forward_peek(nil, [branch(nil, :key, :value, nil)])
       {:key, :value}
   """
 
-@spec preorder_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
-def preorder_peek(@empty, []), do: :done
-def preorder_peek(@empty, [t | _]), do: item(t)
-def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
+@spec forward_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
+def forward_peek(@empty, []), do: :done
+def forward_peek(@empty, [t | _]), do: item(t)
+def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
 
   @doc """
   create a TreeMap iterator starting from at a given key
@@ -307,21 +307,81 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
     end
   end
 
-  @spec nearest(t(key, value), key, distance(key, term())) :: iterator({key, value}) when key: var, value: var
-  def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, t.less, distance) end
+  @doc """
+  TreeMap iterator ending at a given key
 
-  @spec nearest_find(tree(key, value), [node(key, value)], key, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
-  def nearest_find(@empty, [], _, _, _), do: :done
-  def nearest_find(@empty, [t | stack], origin, less, distance) do
-    if less.(origin, key(t)) do
-      nearest_next(preorder_next(right(t), stack) , distance.(origin, key(t)), {item(t), fn -> postorder_next(left(t), stack) end}, origin, distance)
-    else
-      nearest_next(postorder_next(left(t), stack), distance.(origin, key(t)), {item(t), fn -> preorder_next(right(t), stack) end}, origin, distance)
-    end
+  ## Examples
+      iex> iter = 10..70//10 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> nearest(36, fn a, b -> abs(a-b) end)
+      iex> {item, iter} = iter.()
+      ...> item
+      {4, {40, :d}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {6, {30, :c}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {14, {50, :e}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {16, {20, :b}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {24, {60, :f}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {26, {10, :a}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {34, {70, :g}}
+      iex> iter.()
+      :done
+
+      iex> iter = 10..70//10 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> nearest(16, fn a, b -> abs(a-b) end)
+      iex> {item, iter} = iter.()
+      ...> item
+      {4, {20, :b}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {6, {10, :a}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {14, {30, :c}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {24, {40, :d}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {34, {50, :e}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {44, {60, :f}}
+      iex> {item, iter} = iter.()
+      ...> item
+      {54, {70, :g}}
+      iex> iter.()
+      :done
+
+      iex> iter = build([], &Kernel.</2, true) |> nearest(36, fn a, b -> abs(a-b) end)
+      iex> iter.()
+      :done
+  """
+  @spec nearest(t(key, value), key, distance(key, term())) :: iterator({key, value}) when key: var, value: var
+  def nearest(%TreeMap{root: @empty}, _, _), do: fn -> :done end
+  def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, {distance.(origin, key(t.root)), key(t.root)}, t.less, distance) end
+
+  @spec nearest_find(tree(key, value), [node(key, value)], key, {units, key}, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  def nearest_find(@empty, stack, origin, {best_d, best_k}, _less, distance) do
+    [t | stack] = Enum.drop_while(stack, fn t -> key(t) != best_k end)
+    nearest_next(forward_next(right(t), stack) , best_d, {item(t), fn -> backward_next(left(t), stack) end}, origin, distance)
   end
-  def nearest_find(t, stack, origin, less, distance) do
-    nearest_find(if(less.(origin, key(t)), do: left(t), else: right(t)), [t | stack], origin, less, distance)
+  def nearest_find(t, stack, origin, best, less, distance) do
+    k = key(t)
+    candidate = {distance.(origin, k), k}
+    nearest_find(if(less.(origin, k), do: left(t), else: right(t)), [t | stack], origin, better(best, candidate), less, distance)
   end
+
+  @spec better({units, key}, {units, key}) :: {units, key} when units: var, key: var
+  def better({d1, _} = b1, {d2, _} = b2), do: if(d1 < d2, do: b1, else: b2)
 
   @spec nearest_next(iterator_result({key, value}), [node(key, value)], key, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
   def nearest_next(:done, post_distance, {post_item, post_iter}, origin, distance), do:
@@ -362,11 +422,11 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       t == @empty ->
         case stack do
           [] -> :done
-          [x | xs] -> {item(x), fn -> preorder_next(right(x), xs) end}
+          [x | xs] -> {item(x), fn -> forward_next(right(x), xs) end}
         end
       less.(key, key(t)) -> from_rec(left(t), [t | stack], key, less)
       less.(key(t), key) -> from_rec(right(t), stack, key, less)
-      true -> {item(t), fn -> preorder_next(right(t), stack) end}
+      true -> {item(t), fn -> forward_next(right(t), stack) end}
     end
   end
 
@@ -374,7 +434,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
   Post order iteration over a TreeMap
 
   ## Examples
-      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> postorder
+      iex> iter = 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> backward
       ...> {item, iter} = iter.()
       ...> item
       {7, :g}
@@ -399,30 +459,30 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       iex> iter.()
       :done
   """
- @spec postorder(t(key, value)) :: iterator({key, value}) when key: var, value: var
-  def postorder(%TreeMap{root: root}), do: fn -> postorder_next(root, []) end
+ @spec backward(t(key, value)) :: iterator({key, value}) when key: var, value: var
+  def backward(%TreeMap{root: root}), do: fn -> backward_next(root, []) end
 
-  @spec postorder_next(tree(key, value), [t(key, value)]) :: iterator_result({key, value}) when key: var, value: var
-  def postorder_next(@empty, []), do: :done
-  def postorder_next(@empty, [t | stack]), do: {item(t), fn -> postorder_next(left(t), stack) end}
-  def postorder_next(t, stack), do: postorder_next(right(t), [t | stack])
+  @spec backward_next(tree(key, value), [t(key, value)]) :: iterator_result({key, value}) when key: var, value: var
+  def backward_next(@empty, []), do: :done
+  def backward_next(@empty, [t | stack]), do: {item(t), fn -> backward_next(left(t), stack) end}
+  def backward_next(t, stack), do: backward_next(right(t), [t | stack])
 
   @doc """
   Peek at next item in Post order iteration over a TreeMap
 
   ## Examples
-      iex> postorder_peek(nil, [])
+      iex> backward_peek(nil, [])
       :done
-      iex> postorder_peek(nil, [branch(nil, :key, :value, nil)])
+      iex> backward_peek(nil, [branch(nil, :key, :value, nil)])
       {:key, :value}
-      iex> postorder_peek(nil, [branch(nil, :key, :value, nil)])
+      iex> backward_peek(branch(nil, :key, :value, nil), [])
       {:key, :value}
   """
 
-  @spec postorder_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
-  def postorder_peek(@empty, []), do: :done
-  def postorder_peek(@empty, [t | _]), do: item(t)
-  def postorder_peek(t, stack), do: postorder_peek(right(t), [t | stack])
+  @spec backward_peek(tree(key, value), [t(key, value)]) :: :done | {key, value} when key: var, value: var
+  def backward_peek(@empty, []), do: :done
+  def backward_peek(@empty, [t | _]), do: item(t)
+  def backward_peek(t, stack), do: backward_peek(right(t), [t | stack])
 
   @doc """
   Depth first iteration over a TreeMap
@@ -573,7 +633,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       "#TreeMap<>"
   """
   @spec difference(t(key, value), t(key, value)) :: t(key, value) when key: var, value: var
-  def difference(tree1, tree2), do: check(tree1, tree2, fn -> difference_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less) end)
+  def difference(tree1, tree2), do: check(tree1, tree2, fn -> difference_rec(backward(tree1).(), backward(tree2).(), [], tree1.less) end)
 
   def difference_rec(:done, _, items, less), do: build(items, less, true)
   def difference_rec(a, :done, items, less), do: finish(a, items, less)
@@ -613,7 +673,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
   """
   @spec equal?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
   def equal?(%TreeMap{} = tree1, %TreeMap{} = tree2) do
-    tree1.less === tree2.less and equal_rec(preorder(tree1).(), preorder(tree2).(), tree1.less)
+    tree1.less === tree2.less and equal_rec(forward(tree1).(), forward(tree2).(), tree1.less)
   end
 
   @spec equal_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
@@ -644,7 +704,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
   """
  @spec intersect(t(key, value), t(key, value), resolve(key, value)) :: t(key, value) when key: var, value: var
  def intersect(tree1, tree2, resolve \\ fn _, _, v2 -> v2 end) do
-    check(tree1, tree2, fn -> intersect_rec(postorder(tree1).(), postorder(tree2).(), [], tree1.less, resolve) end)
+    check(tree1, tree2, fn -> intersect_rec(backward(tree1).(), backward(tree2).(), [], tree1.less, resolve) end)
  end
 
   @doc """
@@ -704,7 +764,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       false
   """
   @spec subset?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
-  def subset?(tree1, tree2), do: check(tree1, tree2, fn -> subset_rec(preorder(tree1).(), preorder(tree2).(), tree1.less) end)
+  def subset?(tree1, tree2), do: check(tree1, tree2, fn -> subset_rec(forward(tree1).(), forward(tree2).(), tree1.less) end)
 
   @spec subset_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
   def subset_rec(:done, _, _), do: true
@@ -735,7 +795,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       "#TreeMap<a => 1;b => 2;c => 3;>"
   """
   @spec union(t(key, value), t(key, value), (key, value, value -> value)) :: t(key, value) when key: var, value: var
-  def union(tree1, tree2, resolve \\ fn _k, _v1, v2 -> v2 end), do: check(tree1, tree2, fn -> union_rec(postorder(tree1).(), postorder(tree2).(), [], resolve, tree1.less) end)
+  def union(tree1, tree2, resolve \\ fn _k, _v1, v2 -> v2 end), do: check(tree1, tree2, fn -> union_rec(backward(tree1).(), backward(tree2).(), [], resolve, tree1.less) end)
 
   @spec subset_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
 
@@ -872,7 +932,7 @@ def preorder_peek(t, stack), do: preorder_peek(left(t), [t | stack])
       {[1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7]}
   """
   @spec to_list(t(key, value)) :: [{key, value}] when key: var, value: var
-  def to_list(t), do: to_list_rec(postorder(t).(), [])
+  def to_list(t), do: to_list_rec(backward(t).(), [])
 
   @spec to_list_rec(iterator_result({key, value}), [{key, value}]) :: [{key, value}] when key: var, value: var
   def to_list_rec(:done, acc), do: acc
