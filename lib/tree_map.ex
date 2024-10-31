@@ -9,6 +9,8 @@ defmodule TreeMap do
   within?
   """
 
+  alias TreeMap.Iterator
+
   @empty nil
 
   @doc """
@@ -34,8 +36,6 @@ defmodule TreeMap do
   @type resolve(key, value) :: (key, value, value -> value)
   @type t(key, value) :: %__MODULE__{size: non_neg_integer(), root: tree(key, value), less: compare(key)}
   @type rank :: non_neg_integer()
-  @type iterator(item) :: (-> iterator_result(item))
-  @type iterator_result(item) :: :done | {item, iterator(item)}
 
   @spec wrap(tree(key, value), compare(key)) :: t(key, value) when key: var, value: var
   def wrap(branch, less \\ &Kernel.</2), do: %TreeMap{size: size(branch), root: branch, less: less}
@@ -216,10 +216,10 @@ defmodule TreeMap do
       :done
   """
 
-  @spec forward(t(key, value)) :: iterator({key, value}) when key: var, value: var
+  @spec forward(t(key, value)) :: Iterator.t({key, value}) when key: var, value: var
   def forward(t), do: fn -> forward_next(t.root, []) end
 
-  @spec forward_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, iterator({key, value})} when key: var, value: var
+  @spec forward_next(tree(key, value), [t(key, value)]) :: :done | {{key, value}, Iterator.t({key, value})} when key: var, value: var
   def forward_next(@empty, []), do: :done
   def forward_next(@empty, [t | stack]), do: {item(t), fn -> forward_next(right(t), stack) end}
   def forward_next(t, stack), do: forward_next(left(t), [t | stack])
@@ -275,7 +275,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
 
 
 
-  @spec from(t(key, value), key) :: iterator({key, value}) when key: var, value: var
+  @spec from(t(key, value), key) :: Iterator.t({key, value}) when key: var, value: var
   def from(t, key), do: fn -> from_rec(t.root, [], key, t.less) end
 
   @doc """
@@ -283,56 +283,48 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
 
   ## Examples
       iex> map_tree = 1..13//2 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true)
-      iex> map_tree |> from(4) |> until(8) |> iterator_to_list()
+      iex> map_tree |> from(4) |> until(8) |> TreeMap.Iterator.to_list()
       [{5, :c}, {7, :d}]
-      iex> map_tree |> from(6) |> until(11) |> iterator_to_list()
+      iex> map_tree |> from(6) |> until(11) |> TreeMap.Iterator.to_list()
+      [{7, :d}, {9, :e}, {11, :f}]
+      iex> map_tree |> from(7) |> until(11) |> TreeMap.Iterator.to_list()
       [{7, :d}, {9, :e}, {11, :f}]
   """
-  @spec until(iterator({key, value}), key, compare(key)) :: iterator({key, value}) when key: var, value: var
+  @spec until(Iterator.t({key, value}), key, compare(key)) :: Iterator.t({key, value}) when key: var, value: var
   def until(iter, final_key, less \\ &Kernel.</2) do
-    fn -> {{new_key, _} = new_item , new_iter} = iter.()
-      if less.(final_key, new_key) do
-        :done
-      else
-        {new_item, until(new_iter, final_key, less)}
-      end
-    end
+    Iterator.take_while(iter, fn {k, _} -> !less.(final_key, k) end)
   end
 
-
-
-
-
   @doc """
-  TreeMap iterator ending at a given key
+  TreeMap iterator starting at a given key (or its nearest neightbour) in log(n) and iterating in constant time.
 
   ## Examples
       iex> distance = fn a, b -> abs(a-b) end
       iex> tree_map = 10..70//10 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true)
-      iex> tree_map |> nearest(6, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(6, distance) |> TreeMap.Iterator.to_list()
       [{4, {10, :a}}, {14, {20, :b}}, {24, {30, :c}}, {34, {40, :d}}, {44, {50, :e}}, {54, {60, :f}}, {64, {70, :g}}]
-      iex> tree_map |> nearest(16, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(16, distance) |> TreeMap.Iterator.to_list()
       [{4, {20, :b}}, {6, {10, :a}}, {14, {30, :c}}, {24, {40, :d}}, {34, {50, :e}}, {44, {60, :f}}, {54, {70, :g}}]
-      iex> tree_map |> nearest(26, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(26, distance) |> TreeMap.Iterator.to_list()
       [{4, {30, :c}}, {6, {20, :b}}, {14, {40, :d}}, {16, {10, :a}}, {24, {50, :e}}, {34, {60, :f}}, {44, {70, :g}}]
-      iex> tree_map |> nearest(36, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(36, distance) |> TreeMap.Iterator.to_list()
       [{4, {40, :d}}, {6, {30, :c}}, {14, {50, :e}}, {16, {20, :b}}, {24, {60, :f}}, {26, {10, :a}}, {34, {70, :g}}]
-      iex> tree_map |> nearest(46, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(46, distance) |> TreeMap.Iterator.to_list()
       [{4, {50, :e}}, {6, {40, :d}}, {14, {60, :f}}, {16, {30, :c}}, {24, {70, :g}}, {26, {20, :b}}, {36, {10, :a}}]
-      iex> tree_map |> nearest(56, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(56, distance) |> TreeMap.Iterator.to_list()
       [{4, {60, :f}}, {6, {50, :e}}, {14, {70, :g}}, {16, {40, :d}}, {26, {30, :c}}, {36, {20, :b}}, {46, {10, :a}}]
-      iex> tree_map |> nearest(66, distance) |> iterator_to_list()
+      iex> tree_map |> nearest(66, distance) |> TreeMap.Iterator.to_list()
       [{4, {70, :g}}, {6, {60, :f}}, {16, {50, :e}}, {26, {40, :d}}, {36, {30, :c}}, {46, {20, :b}}, {56, {10, :a}}]
 
       iex> iter = build([], &Kernel.</2, true) |> nearest(36, fn a, b -> abs(a-b) end)
       iex> iter.()
       :done
   """
-  @spec nearest(t(key, value), key, distance(key, term())) :: iterator({key, value}) when key: var, value: var
+  @spec nearest(t(key, value), key, distance(key, term())) :: Iterator.t({key, value}) when key: var, value: var
   def nearest(%TreeMap{root: @empty}, _, _), do: fn -> :done end
   def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, {2*distance.(origin, key(t.root)), key(t.root), []}, t.less, distance) end
 
-  @spec nearest_find(tree(key, value), [{atom, node(key, value)}], key, {units, key, [{atom, node(key, value)}]}, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  @spec nearest_find(tree(key, value), [{atom, node(key, value)}], key, {units, key, [{atom, node(key, value)}]}, compare(key), distance(key, units)) :: Iterator.result({units, {key, value}}) when key: var, value: var, units: var
   def nearest_find(@empty, _, origin, {best_d, _, best_s}, _less, distance) do
     [{_, t} | stack] = best_s
     lefts = stack |> Enum.filter(fn {tag, _} -> tag == :left end) |> Enum.map(&elem(&1, 1))
@@ -349,13 +341,13 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
   @spec better({units, key, [term()]}, {units, key, [term()]}) :: {units, key, [term()]} when units: var, key: var
   def better({d1, _, _} = b1, {d2, _, _} = b2), do: if(d1 < d2, do: b1, else: b2)
 
-  @spec nearest_next(iterator_result({key, value}), [node(key, value)], key, compare(key), distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  @spec nearest_next(Iterator.result({key, value}), [node(key, value)], key, compare(key), distance(key, units)) :: Iterator.result({units, {key, value}}) when key: var, value: var, units: var
   def nearest_next(:done, post_distance, {post_item, post_iter}, origin, distance), do:
     {{post_distance, post_item}, fn -> complete_nearest(post_iter.(), origin, distance) end}
   def nearest_next({{pre_k, _}, _} = pre, post_distance, post, origin, distance), do:
     nearest_distance(distance.(origin, pre_k), pre, post_distance, post, origin, distance)
 
-  @spec nearest_distance(units, iterator_result({key, value}), units, iterator_result({key, value}), key, distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  @spec nearest_distance(units, Iterator.result({key, value}), units, Iterator.result({key, value}), key, distance(key, units)) :: Iterator.result({units, {key, value}}) when key: var, value: var, units: var
   def nearest_distance(pre_distance, {pre_item, pre_iter} = pre, post_distance, {post_item, post_iter} = post, origin, distance) do
     if pre_distance <= post_distance do
       {{pre_distance, pre_item}, fn -> nearest_next(pre_iter.(), post_distance, post, origin, distance) end}
@@ -364,25 +356,13 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
     end
   end
 
-  @spec complete_nearest(iterator_result({key, value}), key, distance(key, units)) :: iterator_result({units, {key, value}}) when key: var, value: var, units: var
+  @spec complete_nearest(Iterator.result({key, value}), key, distance(key, units)) :: Iterator.result({units, {key, value}}) when key: var, value: var, units: var
   def complete_nearest(:done, _, _), do: :done
   def complete_nearest({{k, _} = item, iter}, origin, distance), do: {{distance.(origin, k), item}, fn -> complete_nearest(iter.(), origin, distance) end}
 
-  @doc """
-  Convert iterator to list
 
-  ## Examples
-      iex> 1..7 |> Enum.zip(~w(a b c d e f g)a) |> build(&Kernel.</2, true) |> from(4) |> until(6) |> iterator_to_list()
-      [{4, :d}, {5, :e},{6, :f}]
-  """
-  @spec iterator_to_list(iterator(item)) :: [item] when item: var
-  def iterator_to_list(iter), do: iterator_to_list_rec(iter.(), [])
 
-  @spec iterator_to_list_rec(iterator_result(item), [item]) :: [item] when item: var
-  def iterator_to_list_rec(:done, items), do: Enum.reverse(items)
-  def iterator_to_list_rec({item, iter}, items), do: iterator_to_list_rec(iter.(), [item | items])
-
-  @spec from_rec(tree(key, value), [node(key, value)], key, compare(key)) :: iterator_result({key, value}) when key: var, value: var
+  @spec from_rec(tree(key, value), [node(key, value)], key, compare(key)) :: Iterator.result({key, value}) when key: var, value: var
   def from_rec(t, stack, key, less) do
     cond do
       t == @empty ->
@@ -425,10 +405,10 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
       iex> iter.()
       :done
   """
- @spec backward(t(key, value)) :: iterator({key, value}) when key: var, value: var
+ @spec backward(t(key, value)) :: Iterator.t({key, value}) when key: var, value: var
   def backward(%TreeMap{root: root}), do: fn -> backward_next(root, []) end
 
-  @spec backward_next(tree(key, value), [t(key, value)]) :: iterator_result({key, value}) when key: var, value: var
+  @spec backward_next(tree(key, value), [t(key, value)]) :: Iterator.result({key, value}) when key: var, value: var
   def backward_next(@empty, []), do: :done
   def backward_next(@empty, [t | stack]), do: {item(t), fn -> backward_next(left(t), stack) end}
   def backward_next(t, stack), do: backward_next(right(t), [t | stack])
@@ -479,10 +459,10 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
       iex> iter.()
       :done
   """
-  @spec depth_first(t(key, value)) :: iterator({key, value}) when key: var, value: var
+  @spec depth_first(t(key, value)) :: Iterator.t({key, value}) when key: var, value: var
   def depth_first(%TreeMap{root: root}), do: fn -> depth_first_next({[root], []}) end
 
-  @spec depth_first_next({[tree(key, value)], [tree(key, value)]}) :: iterator_result({key, value}) when key: var, value: var
+  @spec depth_first_next({[tree(key, value)], [tree(key, value)]}) :: Iterator.result({key, value}) when key: var, value: var
   def depth_first_next({[], []}), do: :done
   def depth_first_next({[], back}), do: depth_first_next({Enum.reverse(back), []})
 
@@ -642,7 +622,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
     tree1.less === tree2.less and equal_rec(forward(tree1).(), forward(tree2).(), tree1.less)
   end
 
-  @spec equal_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  @spec equal_rec(Iterator.result({key, value}), Iterator.result({key, value}), compare(key)) :: boolean() when key: var, value: var
   def equal_rec(:done, :done, _), do: true
   def equal_rec(:done, _, _), do: false
   def equal_rec(_, :done, _), do: false
@@ -692,7 +672,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
     end
   end
 
-  @spec intersect_rec(iterator_result({key, value}), iterator_result({key, value}), [{key, value}], compare(key), resolve(key, value)) :: t(key, value) when key: var, value: var
+  @spec intersect_rec(Iterator.result({key, value}), Iterator.result({key, value}), [{key, value}], compare(key), resolve(key, value)) :: t(key, value) when key: var, value: var
   def intersect_rec(:done, _, items, less, _), do: build(items, less, true)
   def intersect_rec(_, :done, items, less, _), do: build(items, less, true)
   def intersect_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter} = b, items, less, f) do
@@ -732,7 +712,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
   @spec subset?(t(key, value), t(key, value)) :: boolean() when key: var, value: var
   def subset?(tree1, tree2), do: check(tree1, tree2, fn -> subset_rec(forward(tree1).(), forward(tree2).(), tree1.less) end)
 
-  @spec subset_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  @spec subset_rec(Iterator.result({key, value}), Iterator.result({key, value}), compare(key)) :: boolean() when key: var, value: var
   def subset_rec(:done, _, _), do: true
   def subset_rec(_, :done, _), do: false
   def subset_rec({{a_k, a_v}, a_iter} = a, {{b_k, b_v}, b_iter}, less) do
@@ -763,9 +743,9 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
   @spec union(t(key, value), t(key, value), (key, value, value -> value)) :: t(key, value) when key: var, value: var
   def union(tree1, tree2, resolve \\ fn _k, _v1, v2 -> v2 end), do: check(tree1, tree2, fn -> union_rec(backward(tree1).(), backward(tree2).(), [], resolve, tree1.less) end)
 
-  @spec subset_rec(iterator_result({key, value}), iterator_result({key, value}), compare(key)) :: boolean() when key: var, value: var
+  @spec subset_rec(Iterator.result({key, value}), Iterator.result({key, value}), compare(key)) :: boolean() when key: var, value: var
 
-  @spec union_rec(iterator_result({key, value}), iterator_result({key, value}), [{key, value}], resolve(key, value), compare(key)) :: t(key, value) when key: var, value: var
+  @spec union_rec(Iterator.result({key, value}), Iterator.result({key, value}), [{key, value}], resolve(key, value), compare(key)) :: t(key, value) when key: var, value: var
   def union_rec(:done, b, items, _f, less), do: finish(b, items, less)
   def union_rec(a, :done, items, _f, less), do: finish(a, items, less)
   def union_rec({{a_k, a_v} = a_item, a_iter} = a, {{b_k, b_v} = b_item, b_iter} = b, items, resolve, less) do
@@ -776,7 +756,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
     end
   end
 
-  @spec finish(iterator_result({key, value}), [{key, value}], compare(key)) :: t(key, value) when key: var, value: var
+  @spec finish(Iterator.result({key, value}), [{key, value}], compare(key)) :: t(key, value) when key: var, value: var
   def finish(:done, items, less), do: build(items, less, true)
   def finish({item, iter}, items, less), do: finish(iter.(), [item | items], less)
 
@@ -900,7 +880,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
   @spec to_list(t(key, value)) :: [{key, value}] when key: var, value: var
   def to_list(t), do: to_list_rec(backward(t).(), [])
 
-  @spec to_list_rec(iterator_result({key, value}), [{key, value}]) :: [{key, value}] when key: var, value: var
+  @spec to_list_rec(Iterator.result({key, value}), [{key, value}]) :: [{key, value}] when key: var, value: var
   def to_list_rec(:done, acc), do: acc
   def to_list_rec({item, iter}, acc), do: to_list_rec(iter.(), [item | acc])
 
