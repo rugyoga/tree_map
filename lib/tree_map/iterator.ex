@@ -1,4 +1,7 @@
 defmodule TreeMap.Iterator do
+  @moduledoc """
+  Various iterators for TreeMap
+  """
 
   @type t(item) :: (-> result(item))
   @type result(item) :: :done | {item, t(item)}
@@ -75,7 +78,6 @@ defmodule TreeMap.Iterator do
   @spec drop_while_rec(result(item), predicate(item)) :: result(item) when item: var
   def drop_while_rec(:done, _p), do: nil
   def drop_while_rec({item, iter} = result, p) do
-    IO.inspect(item, label: "drop_while_rec")
     if p.(item) do
       drop_while_rec(iter.(), p)
     else

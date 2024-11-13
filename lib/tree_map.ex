@@ -322,7 +322,7 @@ def forward_peek(t, stack), do: forward_peek(left(t), [t | stack])
   """
   @spec nearest(t(key, value), key, distance(key, term())) :: Iterator.t({key, value}) when key: var, value: var
   def nearest(%TreeMap{root: @empty}, _, _), do: fn -> :done end
-  def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, {2*distance.(origin, key(t.root)), key(t.root), []}, t.less, distance) end
+  def nearest(t, origin, distance), do: fn -> nearest_find(t.root, [], origin, {2 * istance.(origin, key(t.root)), key(t.root), []}, t.less, distance) end
 
   @spec nearest_find(tree(key, value), [{atom, node(key, value)}], key, {units, key, [{atom, node(key, value)}]}, compare(key), distance(key, units)) :: Iterator.result({units, {key, value}}) when key: var, value: var, units: var
   def nearest_find(@empty, _, origin, {best_d, _, best_s}, _less, distance) do
